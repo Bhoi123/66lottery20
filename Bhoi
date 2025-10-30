@@ -1,0 +1,208 @@
+<!doctype html>
+
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>66lottery20 — Color Prediction Demo (No Money)</title>
+  <style>
+    :root{font-family:Inter,system-ui,Segoe UI,Roboto,'Helvetica Neue',Arial;line-height:1.4}
+    body{padding:18px;max-width:980px;margin:0 auto;background:#f7fafc;color:#0f172a}
+    header{display:flex;gap:12px;align-items:center;margin-bottom:14px}
+    h1{font-size:20px;margin:0}
+    .controls{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+    label{font-size:13px}
+    select,input[type=number]{width:100%;padding:8px;border-radius:8px;border:1px solid #e2e8f0}
+    button{padding:10px 12px;border-radius:10px;border:0;background:#0ea5a4;color:white;font-weight:600}
+    .muted{font-size:13px;color:#475569}
+    .row{display:flex;gap:10px}
+    .card{background:white;padding:12px;border-radius:12px;box-shadow:0 6px 18px rgba(2,6,23,0.06);}
+    .grid{display:grid;grid-template-columns:1fr 360px;gap:12px}
+    canvas{width:100%;height:180px}
+    table{width:100%;border-collapse:collapse}
+    td,th{padding:8px;border-bottom:1px solid #eef2f7;text-align:left}
+    footer{margin-top:12px;font-size:13px;color:#475569}
+    @media(max-width:760px){.grid{grid-template-columns:1fr;}.controls{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <header>
+    <div style="width:48px;height:48px;border-radius:10px;background:#0ea5a4;display:flex;align-items:center;justify-content:center;color:white;font-weight:700">66</div>
+    <div>
+      <h1>66lottery20 — Color Prediction Demo (No real money)</h1>
+      <div class="muted">Simulate draws from 20 colors and test strategies: random, fixed-pick, frequency, martingale.</div>
+    </div>
+  </header>  <div class="card">
+    <div class="controls">
+      <div>
+        <label>Strategy</label>
+        <select id="strategy">
+          <option value="random">Random (pick random color each round)</option>
+          <option value="fixed">Fixed pick (always same color)</option>
+          <option value="frequency">Frequency-based (bet most-seen so far)</option>
+          <option value="martingale">Martingale stake (double after loss)</option>
+        </select>
+      </div>
+      <div>
+        <label>Rounds</label>
+        <input type="number" id="rounds" min="1" value="1000" />
+      </div><div>
+    <label>Payout multiplier (house)</label>
+    <input type="number" id="payout" min="1" step="0.1" value="18" />
+  </div>
+
+  <div>
+    <label>Colors (1..20)</label>
+    <input type="number" id="numcolors" min="2" max="40" value="20" />
+  </div>
+
+  <div>
+    <label>Pick (for Fixed) — color index 1..N</label>
+    <input type="number" id="fixedpick" min="1" value="1" />
+  </div>
+
+  <div>
+    <label>Start bankroll (for Martingale)</label>
+    <input type="number" id="bankroll" min="1" value="1000" />
+  </div>
+
+  <div>
+    <label>Base stake (for Martingale)</label>
+    <input type="number" id="basestake" min="0.01" step="0.01" value="1" />
+  </div>
+
+  <div style="display:flex;align-items:center;gap:8px">
+    <button id="run">Run Simulation</button>
+    <button id="reset" style="background:#64748b">Reset</button>
+  </div>
+</div>
+
+<div class="grid" style="margin-top:12px">
+  <div class="card" id="left">
+    <h3 style="margin-top:0">Results</h3>
+    <div id="summary" class="muted">No run yet.</div>
+
+    <canvas id="chart"></canvas>
+
+    <h4 style="margin-bottom:6px">Last 20 draws</h4>
+    <div id="lastdraws" class="muted"></div>
+  </div>
+
+  <div class="card">
+    <h4 style="margin-top:0">Statistics</h4>
+    <table>
+      <tbody>
+        <tr><th>Rounds</th><td id="st_rounds">—</td></tr>
+        <tr><th>Wins</th><td id="st_wins">—</td></tr>
+        <tr><th>Win rate</th><td id="st_winpct">—</td></tr>
+        <tr><th>Final Bankroll</th><td id="st_bank">—</td></tr>
+        <tr><th>Max stake needed</th><td id="st_maxstake">—</td></tr>
+      </tbody>
+    </table>
+
+    <h4 style="margin-top:8px">Notes</h4>
+    <div class="muted">
+      - This is a fair RNG demo: past draws do not change future draws.<br>
+      - House payout &lt; fair payout creates negative expectation.<br>
+      - Martingale can bankrupt you fast if unlucky.
+    </div>
+  </div>
+</div>
+
+  </div>  <footer>
+    <div class="muted">Save this file as <code>66lottery20_color_demo.html</code> and open in any browser. No server required.</div>
+  </footer><script>
+function randInt(n){return Math.floor(Math.random()*n)}
+
+function runSimulation(){
+  const strategy = document.getElementById('strategy').value;
+  const rounds = Math.max(1, parseInt(document.getElementById('rounds').value)||1000);
+  const payout = parseFloat(document.getElementById('payout').value)||18;
+  const N = Math.max(2, parseInt(document.getElementById('numcolors').value)||20);
+  const fixedPick = Math.max(1, parseInt(document.getElementById('fixedpick').value)||1)-1;
+  const startBank = parseFloat(document.getElementById('bankroll').value)||1000;
+  const baseStake = parseFloat(document.getElementById('basestake').value)||1;
+
+  let wins=0; let losses=0; let bank = startBank; let stake = baseStake; let maxStake = stake;
+  const history = [];
+  const counts = Array(N).fill(0);
+  // bootstrap for frequency strategy
+  for(let i=0;i<Math.min(100, rounds);i++){const d=randInt(N);history.push(d);counts[d]++;}
+
+  for(let i=0;i<rounds;i++){
+    let pick;
+    if(strategy==='random') pick = randInt(N);
+    else if(strategy==='fixed') pick = fixedPick % N;
+    else if(strategy==='frequency'){
+      // choose color with highest count so far
+      let maxc = Math.max(...counts);
+      let cand = [];
+      for(let j=0;j<N;j++) if(counts[j]===maxc) cand.push(j);
+      pick = cand[Math.floor(Math.random()*cand.length)];
+    } else if(strategy==='martingale') pick = 0; // always pick color 0
+
+    const draw = randInt(N);
+    history.push(draw);
+    counts[draw]++;
+
+    if(strategy==='martingale'){
+      if(stake>bank){
+        // can't stake: stop
+        break;
+      }
+      if(pick===draw){
+        wins++; bank += stake*(payout-1); stake = baseStake; // win payout
+      } else {
+        losses++; bank -= stake; stake *= 2; maxStake = Math.max(maxStake, stake);
+      }
+    } else {
+      if(pick===draw) wins++; else losses++;
+    }
+  }
+
+  // prepare display
+  document.getElementById('st_rounds').innerText = rounds;
+  document.getElementById('st_wins').innerText = wins;
+  document.getElementById('st_winpct').innerText = ((wins/Math.max(1, rounds))*100).toFixed(2)+" %";
+  document.getElementById('st_bank').innerText = (strategy==='martingale'? bank.toFixed(2): '—');
+  document.getElementById('st_maxstake').innerText = (strategy==='martingale'? maxStake.toFixed(2): '—');
+
+  // last draws
+  const last = history.slice(-20).reverse();
+  document.getElementById('lastdraws').innerHTML = last.map(d=>"C"+(d+1)).join(' , ');
+
+  // summary
+  document.getElementById('summary').innerText = `Strategy: ${strategy} | Colors: ${N} | Rounds: ${rounds} | Wins: ${wins}`;
+
+  // draw simple bar chart of frequencies
+  drawChart(counts);
+}
+
+function drawChart(counts){
+  const canvas = document.getElementById('chart');
+  const ctx = canvas.getContext('2d');
+  const DPR = window.devicePixelRatio || 1;
+  const W = canvas.clientWidth; const H = canvas.clientHeight;
+  canvas.width = W * DPR; canvas.height = H * DPR; ctx.scale(DPR,DPR);
+  ctx.clearRect(0,0,W,H);
+
+  const maxv = Math.max(...counts);
+  const pad = 8; const barW = Math.max(4, (W - pad*2)/counts.length - 2);
+  for(let i=0;i<counts.length;i++){
+    const x = pad + i*(barW+2);
+    const h = (counts[i]/Math.max(1,maxv))*(H-30);
+    ctx.fillStyle = 'rgba(14,165,164,0.9)';
+    ctx.fillRect(x, H-20-h, barW, h);
+  }
+
+  ctx.fillStyle = '#0f172a'; ctx.font = '12px sans-serif';
+  ctx.fillText('Frequency of draws (bar per color, latest 100+ counts shown)', 10, 14);
+}
+
+document.getElementById('run').addEventListener('click', runSimulation);
+document.getElementById('reset').addEventListener('click', ()=>{location.reload();});
+
+// initial draw for chart placeholder
+runSimulation();
+</script></body>
+</html>
